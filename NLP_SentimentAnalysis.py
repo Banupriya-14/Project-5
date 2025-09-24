@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import time
 import os
+from wordcloud import WordCloud
 from streamlit_option_menu import option_menu
 from scipy.sparse import hstack
 
@@ -77,7 +80,7 @@ st.markdown("""
 with st.sidebar:
     selected = option_menu(
         menu_title="Main Menu",  # required
-        options=["Home", "Projects", "About"],  # required
+        options=["Home", "Projects", "Sentiment Analysis"],  # required
         icons=["house", "book", "person"],  # optional
         menu_icon="cast",  # optional
         default_index=0,  # optional
@@ -96,13 +99,14 @@ if selected == 'Projects':
     </h3>
     """,
     unsafe_allow_html=True)
+    
     # Features
-    features = ['title','review','rating', 'helpful_votes', 'review_length', 'platform', 'language',
-       'location', 'version', 'verified_purchase' ]
+
     if "helpful_votes" not in st.session_state:
         st.session_state.helpful_votes = 0
     title=st.text_input("Title")
     review = st.text_input("Review")
+
     if st.button("👍"):
         st.session_state.helpful_votes += 1
         st.write("Helpful Votes:", st.session_state.helpful_votes)
@@ -110,8 +114,10 @@ if selected == 'Projects':
     platform = st.selectbox("Platform", sorted(df["platform"].dropna().unique()))
     language = st.selectbox("Language", sorted(df["language"].dropna().unique()))
     verified_purchase = st.selectbox("Verified Purchase", sorted(df["verified_purchase"].dropna().unique()))
-    location = st.text_input("Location")
-    version = st.text_input("Version")
+    location = st.selectbox("Location", sorted(df["location"].dropna().unique()))
+    version = st.selectbox("Version", sorted(df["version"].dropna().unique()))
+    
+
     if st.button("Submit Review"):
         full_text = title + " " + review
         text_features = tfidf_model.transform([full_text])
@@ -125,6 +131,7 @@ if selected == 'Projects':
         "location": location,
         "version": version,
         "verified_purchase": verified_purchase}])
+
         for col, encoder in encoders.items():
             if col in structured.columns:
                 structured[col] = encoder.transform(structured[col])
@@ -132,6 +139,7 @@ if selected == 'Projects':
         final_features = hstack([text_features, structured])
 
         pred = loaded_model.predict(final_features)
+
         if pred[0]==0:
             st.warning("OOPs we got negative review")
         elif pred[0]==1:
@@ -141,6 +149,118 @@ if selected == 'Projects':
             st.success("success we got POSITIVE review")
 
 
+# Sentiment Analysis
+if selected == "Sentiment Analysis":
+    st.markdown(
+    """
+    <h3 style='text-align: center; color: #0A4461; text-shadow: 2px 2px 5px gray; word-spacing: 5px; 
+    padding: 10px; margin: 15px;'>
+        📊 Overall Sentiment of User Reviews
+    </h3>
+    """,
+    unsafe_allow_html=True)
+   
+    
+    left, right = st.columns(2)    
+    with left:
+
+        # 1.overall sentiment of user reviews
+        def rating_to_sentiment(rating):
+            if rating <= 2:
+                return 'Negative'
+            elif rating == 3:
+                return 'Neutral'
+            else:
+                return 'Positive'
+        df['sentiment'] = df['rating'].apply(rating_to_sentiment)
+        st.write("### 1.Sentiment Proportions")
+        st.write(df['sentiment'].value_counts(normalize=True) * 100)
+
+        # Plot sentiment distribution
+        fig, ax = plt.subplots(figsize=(5,3))
+        sns.countplot(data=df, x='sentiment', hue='sentiment', palette='Set2', ax=ax)
+        ax.set_title("Sentiment Distribution")
+        st.pyplot(fig)
+
+        # 2. sentiment vary by rating
+        sentiment_by_rating = pd.crosstab(df['rating'], df['sentiment'])
+        st.write("### 2.Sentiment vs Rating Crosstab")
+        st.write(sentiment_by_rating)
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.countplot(data=df, x='rating', hue='sentiment', palette='Set2', ax=ax)
+        ax.set_title("Sentiment Distribution by Rating")
+        st.pyplot(fig)
+        st.markdown("""
+        **Insights:**
+        - As expected, most 1-star and 2-star ratings are classified as Negative.  
+        - 3-star ratings are generally Neutral.  
+        - Some 5-star ratings are Neutral (possible mismatch — maybe the review text wasn’t too positive despite the rating).  
+        """)
+
+        # 3. keywords or phrases are most associated with each sentiment class
+        st.write("### 3.Keywords associated with sentiment class")
+        for sentiment in ['Positive', 'Neutral', 'Negative']:
+            # Combine all text for this sentiment
+            text_data = " ".join(df[df['sentiment'] == sentiment]['review'].astype(str))
+        
+            if text_data.strip():  # avoid empty case
+                wordcloud = WordCloud(
+                    width=800,
+                    height=400,
+                    background_color="white",
+                    colormap="Set2"
+                ).generate(text_data)
+
+                st.markdown(f"**Most frequent words in {sentiment} reviews**")
+                # Plot
+                fig, ax = plt.subplots(figsize=(6,4))
+                ax.imshow(wordcloud, interpolation="bilinear")
+                ax.axis("off")
+                st.pyplot(fig)
+
+        # 4. sentiment changed over time
+        st.write("### 4.sentiment changes over time")
+        # process date separately
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df['year'] = df['date'].dt.year
+        df['month'] = df['date'].dt.month
+        df['day'] = df['date'].dt.day
+        df['dayofweek'] = df['date'].dt.dayofweek
+
+        # average rating changed over time
+        avg_rating = df.groupby(df['date'].dt.to_period('M'))['rating'].mean().reset_index()
+        avg_rating['date'] = avg_rating['date'].dt.to_timestamp()
+
+        # Plot
+        fig, ax = plt.subplots(figsize=(6,4))
+        ax.plot(avg_rating['date'], avg_rating['rating'], marker='o', color='m')
+        ax.set_title("Average Rating Over Time")
+        ax.set_xlabel("Date (Monthly)")
+        ax.set_ylabel("Average Rating")
+        ax.grid(True)
+
+        st.pyplot(fig)
+
+
+        # 5. verified users tend to leave more positive or negative reviews
+        st.write("### 5.Verified users vs positive or negative reviews")
+        rating_verified = df.groupby('verified_purchase')['rating'].mean().sort_values(ascending=False)
+        rating_verified_df = rating_verified.reset_index()
+
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.barplot(data=rating_verified_df, x='verified_purchase', y='rating', palette='Set2', ax=ax)
+        ax.set_ylim(1, 5)
+        ax.set_title("Average Rating by Verified Purchase")
+        ax.set_xlabel("Verified Purchase")
+        ax.set_ylabel("Average Rating")
+        st.pyplot(fig)
+        st.markdown("""
+        **Insights:**
+        - Verified users tend to leave slightly higher ratings on average.  
+        - This suggests that verified users are generally more positive in their reviews.  
+        """)
+
+            
 
 
 
