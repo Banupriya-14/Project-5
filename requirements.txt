@@ -1,9 +1,11 @@
 streamlit
 pandas
 numpy
-seaborn
 matplotlib
-scikit-learn==1.6.1
+seaborn
+wordcloud
+streamlit-option-menu
+scikit-learn
 xgboost
-WordCloud
-from sklearn.feature_extraction.text import CountVectorizer
+nltk
+scipy
