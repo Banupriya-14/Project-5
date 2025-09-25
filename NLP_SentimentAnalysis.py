@@ -7,6 +7,7 @@ import time
 import os
 from wordcloud import WordCloud
 from streamlit_option_menu import option_menu
+from sklearn.feature_extraction.text import CountVectorizer
 from scipy.sparse import hstack
 
 import pickle
@@ -95,7 +96,7 @@ if selected == 'Projects':
     <h3 style='text-align: center; color: #0B4242; text-shadow: 2px 2px 5px gray; word-spacing: 5px; border: 2px solid #333;
     border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); background-color: #F5F5F5;
     padding: 10px; margin: 15px;'>
-        Please provide your feedback
+       📄 We value your feedback
     </h3>
     """,
     unsafe_allow_html=True)
@@ -118,7 +119,8 @@ if selected == 'Projects':
     version = st.selectbox("Version", sorted(df["version"].dropna().unique()))
     
 
-    if st.button("Submit Review"):
+    if st.button("Submit Feedback"):
+        st.success("✅ Thank you! Your feedback has been submitted.")
         full_text = title + " " + review
         text_features = tfidf_model.transform([full_text])
         
@@ -161,7 +163,7 @@ if selected == "Sentiment Analysis":
     unsafe_allow_html=True)
    
     
-    left, right = st.columns(2)    
+    left, right = st.columns(2, gap='large')    
     with left:
 
         # 1.overall sentiment of user reviews
@@ -219,7 +221,7 @@ if selected == "Sentiment Analysis":
                 st.pyplot(fig)
 
         # 4. sentiment changed over time
-        st.write("### 4.sentiment changes over time")
+        st.write("### 4.Sentiment changes over time")
         # process date separately
         df['date'] = pd.to_datetime(df['date'], errors='coerce')
         df['year'] = df['date'].dt.year
@@ -243,7 +245,7 @@ if selected == "Sentiment Analysis":
 
 
         # 5. verified users tend to leave more positive or negative reviews
-        st.write("### 5.Verified users vs positive or negative reviews")
+        st.write("### 5.Verified users vs Sentiment")
         rating_verified = df.groupby('verified_purchase')['rating'].mean().sort_values(ascending=False)
         rating_verified_df = rating_verified.reset_index()
 
@@ -259,6 +261,116 @@ if selected == "Sentiment Analysis":
         - Verified users tend to leave slightly higher ratings on average.  
         - This suggests that verified users are generally more positive in their reviews.  
         """)
+
+    with right:
+
+        # 6. longer reviews vs negative or positive review
+        st.write("### 6.Longer reviews vs Sentiment")
+        length_sentiment = df.groupby('sentiment')['review_length'].mean().sort_values(ascending=False)
+        length_sentiment_df = length_sentiment.reset_index()
+
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.barplot(data=length_sentiment_df, x='sentiment', y='review_length', palette='Set2', ax=ax)
+        ax.set_title("Average Review Length by Sentiment")
+        ax.set_xlabel("Sentiment")
+        ax.set_ylabel("Average Review Length")
+        st.pyplot(fig)
+        st.markdown("""
+        **Insights:**
+        - Longer reviews often indicate stronger opinions (either highly positive or strongly negative).  
+        - Shorter reviews tend to be neutral or casual feedback.  
+        """)
+
+        # 7. Locations vs Sentiment
+        st.write("### 6.Location vs Sentiment")
+        sentiment_map = {'Negative': 0, 'Neutral': 1, 'Positive': 2}
+        df['sentiment_num'] = df['sentiment'].map(sentiment_map)
+
+        location_sentiment = df.groupby('location')['sentiment_num'].mean().sort_values(ascending=False)
+        location_sentiment_df = location_sentiment.reset_index()
+
+        fig, ax = plt.subplots(figsize=(8,5))
+        sns.barplot(data=location_sentiment_df, x='location', y='sentiment_num', palette='coolwarm', ax=ax)
+        ax.set_title("Average Sentiment by Location")
+        ax.set_xlabel("Location")
+        ax.set_ylabel("Average Sentiment (0=Negative, 1=Neutral, 2=Positive)")
+        ax.tick_params(axis='x', rotation=90)
+        st.pyplot(fig)
+        st.markdown("""
+        **Insights:**
+        - Locations at the top of the chart show higher positivity.  
+        - Lower-ranked locations lean toward more negative sentiment.  
+        - This helps highlight regional differences in satisfaction.  
+        """)
+
+        # 8. Difference in sentiment across platforms
+        st.write("### 8. Sentiment across Platforms")
+
+        platform_sentiment_dist = pd.crosstab(df['platform'], df['sentiment'], normalize='index')
+        fig, ax = plt.subplots(figsize=(8,5))
+        platform_sentiment_dist.plot(kind='bar', stacked=True, ax=ax, colormap='Set2')
+
+        fig, ax = plt.subplots(figsize=(8,5))
+        platform_sentiment_dist.plot(kind='bar', stacked=True, ax=ax, colormap='Set2')
+
+        ax.set_title("Sentiment Distribution Across Platforms")
+        ax.set_xlabel("Platform")
+        ax.set_ylabel("Proportion of Reviews")
+        ax.legend(title="Sentiment", bbox_to_anchor=(1.05, 1), loc='upper left')
+        st.pyplot(fig)
+
+        st.markdown("""
+        **Insights:**
+        - Platforms with higher average sentiment scores indicate better user experience.  
+        - Platforms with lower scores might have usability or performance issues.  
+        - This helps prioritize improvements across different platforms.  
+        """)
+
+        # 9. Version vs Sentiment
+        st.write("### 9. Sentiment by ChatGPT Version")
+        version_sentiment = df.groupby('version')['sentiment_num'].mean().sort_values(ascending=False)
+        version_sentiment_df = version_sentiment.reset_index()
+
+        fig, ax = plt.subplots(figsize=(8,5))
+        sns.barplot(data=version_sentiment_df, x='version', y='sentiment_num', palette='viridis', ax=ax)
+        ax.set_title("Average Sentiment by ChatGPT Version")
+        ax.set_xlabel("App Version")
+        ax.set_ylabel("Average Sentiment (0=Negative, 1=Neutral, 2=Positive)")
+        ax.tick_params(axis='x', rotation=90)
+        st.pyplot(fig)
+
+        st.markdown("""
+        **Insights:**
+        - Versions with higher average sentiment show user satisfaction improvements.  
+        - Versions with lower sentiment may indicate issues introduced in those releases.  
+        - This analysis can guide product teams in version-specific debugging.  
+        """)
+
+        # 10. Common Negative Feedback Themes
+
+        st.write("### 10. Common Negative Feedback Themes")
+
+        # Filter negative reviews
+        negative_reviews = df[df['sentiment'] == 'Negative']['review'].astype(str)
+
+        vectorizer = CountVectorizer(stop_words='english', max_features=20, ngram_range=(1,2))
+        X = vectorizer.fit_transform(negative_reviews)
+
+        word_freq = dict(zip(vectorizer.get_feature_names_out(), X.toarray().sum(axis=0)))
+        word_freq_sorted = dict(sorted(word_freq.items(), key=lambda item: item[1], reverse=True))
+
+        freq_df = pd.DataFrame(list(word_freq_sorted.items()), columns=["Keyword/Phrase", "Frequency"])
+        st.dataframe(freq_df)
+
+        fig, ax = plt.subplots(figsize=(8,5))
+        sns.barplot(data=freq_df, x="Frequency", y="Keyword/Phrase")
+        ax.set_title("Top Keywords in Negative Reviews")
+        st.pyplot(fig)
+
+
+
+
+
 
             
 
