@@ -26,6 +26,8 @@ with open(os.path.join(BASE_DIR, 'tfidf_vectorizer_model.pkl'), 'rb') as filenam
 # Load the model from file
 with open(os.path.join(BASE_DIR, 'randfor_model.pkl'), 'rb') as filename:
     loaded_model = pickle.load(filename)
+with open(os.path.join(BASE_DIR,'xgboost_model.pkl'), 'rb') as f:
+    xgb_model = pickle.load(f)
 
 df = pd.read_csv(os.path.join(BASE_DIR,"chatgpt_style_reviews_dataset.xlsx - Sheet1.csv"))
 
@@ -140,7 +142,7 @@ if selected == 'Projects':
         structured = structured[structured.columns]
         final_features = hstack([text_features, structured])
 
-        pred = loaded_model.predict(final_features)
+        pred = xgb_model.predict(final_features)
 
         if pred[0]==0:
             st.warning("OOPs we got negative review")
